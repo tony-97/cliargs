@@ -1,9 +1,13 @@
 #include <iostream>
+#include <iterator>
+#include <limits>
 #include <sstream>
 #include <string_view>
-#include <optional>
 #include <type_traits>
 #include <utility>
+#include <vector>
+#include <algorithm>
+
 #include <cstring>
 
 struct nothing_t {  };
@@ -14,7 +18,22 @@ constexpr Is& operator>>(Is& is, nothing_t& nothing)
     return is;
 }
 
+template<class Is>
+constexpr Is& operator>>(Is& is, std::vector<int>& values)
+{
+    int v {  };
+    while (is >> v) {
+        values.push_back(v);
+    }
+    is.clear();
+    is.ignore(std::numeric_limits<std::streamsize>::max());
+
+    return is;
+}
+
 template<class T> struct value_t {  };
+
+template<class T> constexpr value_t<T> value_v {  };
 
 template<class Value_t, std::size_t Size>
 struct option_t
@@ -22,15 +41,29 @@ struct option_t
     using type = Value_t;
 
     const char long_name[Size] {  };
-    const char short_naem {  };
     value_t<Value_t> v_type {  };
 };
 
-template<class Value_t, std::size_t Size>
-option_t(const char (&)[Size], const char, value_t<Value_t>) -> option_t<Value_t, Size>;
+struct simple_option_t
+{
+    
+};
+
+struct short_option
+{
+    
+};
+
+struct long_option
+{
+    
+};
 
 template<std::size_t Size>
-option_t(const char (&)[Size], const char) -> option_t<nothing_t, Size>;
+option_t(const char (&)[Size]) -> option_t<nothing_t, Size>;
+
+template<class Value_t, std::size_t Size>
+option_t(const char (&)[Size], value_t<Value_t>) -> option_t<Value_t, Size>;
 
 template<class... Ts> struct matcher_t : Ts... { using Ts::operator()...; };
 template<class... Ts> matcher_t(Ts...) -> matcher_t<Ts...>;
@@ -50,23 +83,23 @@ struct args_parser_t
     }
 
     template<class Do_t>
-    constexpr void match_arg(const char* arg, Do_t&& fn) {  }
+    constexpr void match_arg([[maybe_unused]] const char* rg, [[maybe_unused]] Do_t&& fn) {  }
 
+    // TODO: change for use iterators
     template<auto... Opts, class Matcher_t>
-    constexpr void parse(int arcgc, char* argv[], Matcher_t&& match)
+    constexpr void parse(int argc, char* argv[], Matcher_t&& match)
     {
-        for (int i = 0; i < arcgc; ++i) {
-            if (argv[i][0] == '-' && std::strlen(argv[i]) >= 2 && argv[i][1] != '-') {
-                
-                continue;
-            }
+        for (int i = 0; i < argc; ++i) {
             match_arg<Opts...>(argv[i], [&](auto&& opt){
                 using value_type = typename std::remove_reference_t<decltype(opt)>::type;
                 value_type value {  };
                 if constexpr (not std::is_same_v<value_type, nothing_t>) {
-                    std::stringstream ss { argv[++i] };
+                    std::stringstream ss {  };
+                    while (argv[++i] != nullptr && argv[i][0] != '-') {
+                        ss << argv[i] << " ";
+                    }
                     ss >> value;
-                    match(std::forward<decltype(opt)>(opt), value);
+                    match(std::forward<decltype(opt)>(opt), std::move(value));
                 } else {
                     match(std::forward<decltype(opt)>(opt));
                 }
@@ -77,14 +110,21 @@ struct args_parser_t
 
 int main(int argc, char* argv[])
 {
-    constexpr option_t help    { "--help", 'h' };
-    constexpr option_t version { "--version", 'v', value_t<float>{} };
-    constexpr option_t enable  { "--enable", 'e' };
+    constexpr option_t help    { "--help" };
+    constexpr option_t version { "--version", value_v<float> };
+    constexpr option_t values  { "--values", value_v<std::vector<int>> };
+
     args_parser_t args {  };
-    args.parse<help, version, enable>(argc, argv, matcher_t {
-            [](decltype(help)){ std::cout << "help option found!\n"; },
-            [](decltype(version), auto&& v){ std::cout << "version option found!\nValue: " << v << std::endl; },
-            [](decltype(enable)){ std::cout << "enable option found!\n"; }
+    args.parse<help, version, values>(argc, argv, matcher_t {
+            [](decltype(help)) { std::cout << "help option found!\n"; },
+            [](decltype(version), auto&& v) {
+                std::cout << "version option found!\nValue: " << v << std::endl;
+            },
+            [](decltype(values), auto&& v) { 
+                std::cout << "values option found!\n";
+                for (auto&& i : v ) { std::cout << i << " "; }
+                std::cout << std::endl;
+            }
             });
     return 0;
 }
