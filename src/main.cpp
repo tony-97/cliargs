@@ -73,24 +73,30 @@ struct args_parser_t
     constexpr explicit args_parser_t() = default;
 
     template<auto Opt, auto... Opts, class Do_t>
-    constexpr void match_arg(const char* arg, Do_t&& fn)
+    constexpr bool match_long_option(const char* arg, Do_t&& fn)
     {
         if (std::string_view(Opt.long_name) == arg) {
             fn(Opt);
+            return true;
         } else {
-            match_arg<Opts...>(arg, std::forward<Do_t>(fn));
+            return match_long_option<Opts...>(arg, std::forward<Do_t>(fn));
         }
+
+        return false;
     }
 
     template<class Do_t>
-    constexpr void match_arg([[maybe_unused]] const char* rg, [[maybe_unused]] Do_t&& fn) {  }
+    constexpr bool match_long_option([[maybe_unused]] const char* rg, [[maybe_unused]] Do_t&& fn)
+    {
+        return false;
+    }
 
     // TODO: change for use iterators
     template<auto... Opts, class Matcher_t>
     constexpr void parse(int argc, char* argv[], Matcher_t&& match)
     {
         for (int i = 0; i < argc; ++i) {
-            match_arg<Opts...>(argv[i], [&](auto&& opt){
+            auto matched = match_long_option<Opts...>(argv[i], [&](auto&& opt){
                 using value_type = typename std::remove_reference_t<decltype(opt)>::type;
                 value_type value {  };
                 if constexpr (not std::is_same_v<value_type, nothing_t>) {
@@ -104,12 +110,32 @@ struct args_parser_t
                     match(std::forward<decltype(opt)>(opt));
                 }
             });
+
+            // check for short options
+            if (!matched) {
+            }
         }
     }
 };
 
+template<class Fn_t, std::size_t Size, class Value_t>
+struct my_opt
+{
+    const char n[Size] {  };
+    value_t<Value_t> v {  };
+    Fn_t cb { };
+};
+
+template<class Fn_t, std::size_t Size>
+my_opt(const char (&)[Size], Fn_t&&) -> my_opt<Fn_t, Size, nothing_t>;
+
+template<class Fn_t, std::size_t Size, class Value_t>
+my_opt(const char (&)[Size], value_t<Value_t>, Fn_t&&) -> my_opt<Fn_t, Size, Value_t>;
+
+
 int main(int argc, char* argv[])
 {
+    constexpr my_opt opt { "--help", [](){} };
     constexpr option_t help    { "--help" };
     constexpr option_t version { "--version", value_v<float> };
     constexpr option_t values  { "--values", value_v<std::vector<int>> };
